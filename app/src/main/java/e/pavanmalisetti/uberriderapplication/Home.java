@@ -48,10 +48,20 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.iid.FirebaseInstanceId;
+import com.google.gson.Gson;
 
 import e.pavanmalisetti.uberriderapplication.Common.Common;
 import e.pavanmalisetti.uberriderapplication.Helder.CustomInfoWindow;
+import e.pavanmalisetti.uberriderapplication.Model.FCMResponse;
+import e.pavanmalisetti.uberriderapplication.Model.Notification;
 import e.pavanmalisetti.uberriderapplication.Model.Rider;
+import e.pavanmalisetti.uberriderapplication.Model.Sender;
+import e.pavanmalisetti.uberriderapplication.Model.Token;
+import e.pavanmalisetti.uberriderapplication.Remote.IFCMService;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class Home extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener,OnMapReadyCallback
@@ -93,6 +103,9 @@ public class Home extends AppCompatActivity
     int distance=1; //1km
     private static final int LIMIT = 3;
 
+    //Send Alert
+    IFCMService mService;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -100,6 +113,7 @@ public class Home extends AppCompatActivity
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
+        mService=Common.getFCMService();
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -128,11 +142,67 @@ public class Home extends AppCompatActivity
         btnPickupRequest.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                    requestPickupHere(FirebaseAuth.getInstance().getCurrentUser().getUid());
+            if(!isDriverFound){
+                requestPickupHere(FirebaseAuth.getInstance().getCurrentUser().getUid());
+            }else{
+                sendRequestToDriver(driverId);
+            }
             }
         });
         
         setUpLocation();
+        updateFirebaseToken();
+    }
+
+    private void updateFirebaseToken() {
+        FirebaseDatabase db=FirebaseDatabase.getInstance();
+        DatabaseReference tokens=db.getReference(Common.token_tbl);
+
+        Token token=new Token(FirebaseInstanceId.getInstance().getToken());
+        Toast.makeText(Home.this,"avan"+token.toString(),Toast.LENGTH_LONG).show();
+        tokens.child(FirebaseAuth.getInstance().getCurrentUser().getUid())
+                .setValue(token);
+    }
+
+    private void sendRequestToDriver(String driverId) {
+        DatabaseReference tokens=FirebaseDatabase.getInstance().getReference(Common.token_tbl);
+        tokens.orderByKey().equalTo(driverId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                        for(DataSnapshot postSnapshot:dataSnapshot.getChildren()){
+                            Token token=postSnapshot.getValue(Token.class); //get token object from database with key
+
+                            //Make raw payload - convert Lat,lng to json so that we can send json object to driver app
+                            String json_lat_lng=new Gson().toJson(new LatLng(mLastLocation.getLatitude(),mLastLocation.getLongitude()));
+
+                            Notification notification =new Notification("PAVAN",json_lat_lng); //send it to driver app and then we deserialise it in driver app
+                            Sender sender = new Sender(token.getToken(),notification); //send this notification to token
+
+                            mService.sendMessage(sender)
+                                    .enqueue(new Callback<FCMResponse>() {
+                                        @Override
+                                        public void onResponse(Call<FCMResponse> call, Response<FCMResponse> response) {
+                                            if(response.body().success==1){
+                                                Toast.makeText(Home.this,"Request sent!",Toast.LENGTH_SHORT).show();
+                                            }else{
+                                                Toast.makeText(Home.this,"Failed!",Toast.LENGTH_SHORT).show();
+                                            }
+                                        }
+
+                                        @Override
+                                        public void onFailure(Call<FCMResponse> call, Throwable t) {
+                                            Log.e("ERROR",t.getMessage());
+                                        }
+                                    });
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError databaseError) {
+
+                    }
+                });
     }
 
     private void requestPickupHere(String uid) {
