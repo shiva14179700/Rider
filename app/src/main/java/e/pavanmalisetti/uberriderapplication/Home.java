@@ -163,7 +163,7 @@ public class Home extends AppCompatActivity
         DatabaseReference tokens=db.getReference(Common.token_tbl);
 
         Token token=new Token(FirebaseInstanceId.getInstance().getToken());
-        Toast.makeText(Home.this,"avan"+token.toString(),Toast.LENGTH_LONG).show();
+        Toast.makeText(Home.this,"pavan"+token.toString(),Toast.LENGTH_LONG).show();
         tokens.child(FirebaseAuth.getInstance().getCurrentUser().getUid())
                 .setValue(token);
     }
@@ -179,8 +179,9 @@ public class Home extends AppCompatActivity
 
                             //Make raw payload - convert Lat,lng to json so that we can send json object to driver app
                             String json_lat_lng=new Gson().toJson(new LatLng(mLastLocation.getLatitude(),mLastLocation.getLongitude()));
+                            String riderToken=FirebaseInstanceId.getInstance().getToken();
 
-                            Notification notification =new Notification("PAVAN",json_lat_lng); //send it to driver app and then we deserialise it in driver app
+                            Notification notification =new Notification(riderToken,json_lat_lng); //send it to driver app and then we deserialise it in driver app
                             Sender sender = new Sender(token.getToken(),notification); //send this notification to token
 
                             mService.sendMessage(sender)
